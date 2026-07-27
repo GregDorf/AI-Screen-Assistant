@@ -159,7 +159,8 @@ class AIOverlay(QWidget):
         self.angle = 0
         self.anim_timer = QTimer(self)
         self.anim_timer.timeout.connect(self.update_animation)
-        self.anim_timer.start(16)
+        #FPS
+        self.anim_timer.start(33)
         
         self.hotkey_signal = HotkeySignal()
         self.hotkey_signal.triggered.connect(self.start_capture)
@@ -265,6 +266,12 @@ class AIOverlay(QWidget):
         self.is_selecting = True
         self.is_choosing_action = False
         self.is_choosing_lang = False
+        
+        # --- ДОБАВЛЕНО: Сброс координат предыдущего выделения ---
+        self.start_pos = QPoint()
+        self.end_pos = QPoint()
+        self.current_target_rect = QRect()
+        # --------------------------------------------------------
 
         self.clearMask()  # Очищаем маску для полноэкранного выделения
         self.showMaximized()
@@ -302,10 +309,12 @@ class AIOverlay(QWidget):
                 resize_handle = QRect(item.answer_rect.right() - 15, item.answer_rect.bottom() - 15, 15, 15)
                 if resize_handle.contains(pos):
                     self.resizing_item = item
+                    self.clearMask()
                     return
                 elif item.answer_rect.contains(pos):
                     self.dragging_item = item
                     self.drag_offset = pos - item.answer_rect.topLeft()
+                    self.clearMask()
                     return
 
         if self.is_selecting and event.button() == Qt.MouseButton.LeftButton:
@@ -331,7 +340,7 @@ class AIOverlay(QWidget):
 
         if self.dragging_item:
             self.dragging_item.answer_rect.moveTo(pos - self.drag_offset)
-            self.update_interaction_mask()  # Обновляем маску при движении
+            #self.update_interaction_mask()  # Обновляем маску при движении
             self.update()
             return
 
@@ -340,7 +349,7 @@ class AIOverlay(QWidget):
             new_h = max(100, pos.y() - self.resizing_item.answer_rect.top())
             self.resizing_item.answer_rect.setWidth(new_w)
             self.resizing_item.answer_rect.setHeight(new_h)
-            self.update_interaction_mask()  # Обновляем маску при ресайзе
+            #self.update_interaction_mask()  # Обновляем маску при ресайзе
             self.update()
             return
 
@@ -367,6 +376,12 @@ class AIOverlay(QWidget):
                 self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def mouseReleaseEvent(self, event):
+        if self.dragging_item or self.resizing_item:
+            self.dragging_item = None
+            self.resizing_item = None
+            self.update_interaction_mask()  
+            return
+        
         self.dragging_item = None
         self.resizing_item = None
 
@@ -534,6 +549,9 @@ class AIOverlay(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
+        # Получаем область, которую реально нужно перерисовать
+        clip_rect = event.rect()
+
         # Рисуем скриншот ТОЛЬКО если пользователь активно выбирает область
         if self.is_selecting or self.is_choosing_action or self.is_choosing_lang:
             painter.fillRect(self.rect(), Qt.GlobalColor.black)
@@ -544,7 +562,11 @@ class AIOverlay(QWidget):
             painter.fillRect(self.rect(), Qt.GlobalColor.transparent)
 
         for item in self.history_items:
-            self.draw_result_item(painter, item, draw_snapshot=True)
+            # Создаем общий прямоугольник, охватывающий скриншот и плашку ответа
+            item_full_rect = item.rect.united(item.answer_rect)
+            # Добавляем запас в 20 пикселей для соединительной линии и спиннера загрузки
+            if clip_rect.intersects(item_full_rect.adjusted(-20, -20, 20, 20)):
+                self.draw_result_item(painter, item, draw_snapshot=True)
 
         if self.is_selecting or self.is_choosing_action or self.is_choosing_lang:
             painter.setBrush(Qt.BrushStyle.NoBrush)

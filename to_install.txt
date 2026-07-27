@@ -1,0 +1,1 @@
+pyinstaller --onefile --console --clean --noconfirm --strip --noupx --icon=logo.ico --name="Screen AI Assistant" --exclude-module=PySide6 --exclude-module=PyQt5 --exclude-module=PySide2 --collect-all easyocr --hidden-import=PIL --hidden-import=numpy --hidden-import=requests --hidden-import=keyboard --hidden-import=openai --hidden-import=google.genai main.py
