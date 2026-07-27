@@ -4,6 +4,7 @@ import requests
 import easyocr
 from PyQt6.QtCore import QThread, pyqtSignal
 import config
+import os
 
 try:
     from openai import OpenAI
@@ -16,8 +17,24 @@ except ImportError:
     genai = None
 
 print("[System] Инициализация OCR движка...")
-GLOBAL_READER = easyocr.Reader(['ru', 'en'], gpu=False, verbose=False)
-print("[System] OCR готов к работе.")
+
+model_dir = os.path.expanduser("~/.EasyOCR/model")
+
+if not os.path.exists(model_dir):
+    print("[System] Модели EasyOCR не найдены.")
+    print("[System] При первом запуске они будут автоматически скачаны (~80 МБ).")
+    print("[System] После этого интернет больше не потребуется.")
+
+try:
+    GLOBAL_READER = easyocr.Reader(
+        ['ru', 'en'],
+        gpu=False,
+        verbose=False
+    )
+    print("[System] OCR готов к работе.")
+except Exception as e:
+    print(f"[System] Не удалось инициализировать OCR: {e}")
+    raise
 
 
 class AIWorker(QThread):

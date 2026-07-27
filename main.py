@@ -41,13 +41,13 @@ class AIOverlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAutoFillBackground(False)
         
-        self.hwnd = None
-        if sys.platform == "win32":
-            try:
-                self.hwnd = int(self.winId())
-                ctypes.windll.user32.SetWindowDisplayAffinity(self.hwnd, 0x00000011)
-            except Exception as e:
-                print(f"[System Warning] Не удалось установить защиту от захвата окна: {e}")
+        #self.hwnd = None
+        #if sys.platform == "win32":
+        #    try:
+        #        self.hwnd = int(self.winId())
+        #        ctypes.windll.user32.SetWindowDisplayAffinity(self.hwnd, 0x00000011)
+        #    except Exception as e:
+        #        print(f"[System Warning] Не удалось установить защиту от захвата окна: {e}")
 
         self.is_selecting = False
         self.is_choosing_action = False
