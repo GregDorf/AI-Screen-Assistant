@@ -63,7 +63,3 @@ screen-helper/
 ├── config.py
 └── README.md
 ```
-
-## License
-
-MIT
