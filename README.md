@@ -22,9 +22,7 @@
 
 ## Screenshot
 
-> *(add screenshot here)*
-
-![preview](docs/screenshot.png)
+<img width="1398" height="691" alt="image" src="https://github.com/user-attachments/assets/fb33b2ed-b97c-41d8-bf09-6566b2b0afb1" />
 
 ## Installation
 
