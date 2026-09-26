@@ -1,4 +1,5 @@
 import sys
+import signal
 import ctypes
 import math
 import keyboard
@@ -7,6 +8,7 @@ from PyQt6.QtCore import Qt, QRect, QPoint, pyqtSignal, QObject, QBuffer, QIODev
 from PyQt6.QtGui import QPainter, QPen, QColor, QScreen, QPixmap, QFont, QRegion, QPolygon
 
 import config
+from tray import TrayManager
 from processor import AIWorker
 
 
@@ -650,7 +652,29 @@ class AIOverlay(QWidget):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
+
+    # Не завершать приложение при скрытии окон
+    app.setQuitOnLastWindowClosed(False)
+
     overlay = AIOverlay()
-    print(f"[System] Ассистент запущен. Провайдер: {config.PROVIDER} | Модель: {config.MODEL_NAME}")
-    print(f"[System] Нажми {config.HOTKEY} для выделения. Для очистки экрана нажми Esc.")
+
+    # Создаем системный трей
+    tray = TrayManager(overlay)
+
+    # Корректное завершение через Ctrl+C
+    signal.signal(
+        signal.SIGINT,
+        lambda signum, frame: tray.exit_application()
+    )
+
+    print(
+        f"[System] Ассистент запущен. "
+        f"Провайдер: {config.PROVIDER} | Модель: {config.MODEL_NAME}"
+    )
+
+    print(
+        f"[System] Нажми {config.HOTKEY} для выделения. "
+        f"Для очистки экрана нажми Esc."
+    )
+
     sys.exit(app.exec())
