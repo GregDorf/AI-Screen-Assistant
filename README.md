@@ -51,13 +51,3 @@ The configuration is automatically saved to `config.json`.
 |------|--------|
 | **Ctrl + Shift + A** | Select screen area |
 | **Esc** | Cancel / Clear overlay |
-
-## Project Structure
-
-```
-screen-helper/
-├── main.py
-├── processor.py
-├── config.py
-└── README.md
-```
