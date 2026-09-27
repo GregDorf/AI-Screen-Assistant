@@ -1,8 +1,13 @@
+import os
 import sys
 import signal
 import ctypes
 import math
 import keyboard
+
+# Принудительно устанавливаем CWD в папку с .exe файлом
+if getattr(sys, 'frozen', False):
+    os.chdir(os.path.dirname(sys.executable))
 
 from PyQt6.QtWidgets import (
     QApplication,
@@ -315,26 +320,27 @@ class AIOverlay(QWidget):
         # -----------------------------------------------------
 
         self.hotkey_signal = HotkeySignal()
-
-        self.hotkey_signal.triggered.connect(
-            self.start_capture
-        )
-
-        keyboard.add_hotkey(
-            config.HOTKEY,
-            self.hotkey_signal.triggered.emit
-        )
+        self.hotkey_signal.triggered.connect(self.start_capture)
 
         self.esc_signal = EscSignal()
+        self.esc_signal.triggered.connect(self.reset_all)
 
-        self.esc_signal.triggered.connect(
-            self.reset_all
-        )
+        # Запускаем регистрацию хуков с задержкой в 3 секунды
+        QTimer.singleShot(3000, self.init_hotkeys)
 
-        keyboard.add_hotkey(
-            "esc",
-            self.esc_signal.triggered.emit
-        )
+    def init_hotkeys(self):
+        try:
+            keyboard.add_hotkey(
+                config.HOTKEY,
+                self.hotkey_signal.triggered.emit
+            )
+            keyboard.add_hotkey(
+                "esc",
+                self.esc_signal.triggered.emit
+            )
+            print("[System] Глобальные горячие клавиши успешно зарегистрированы")
+        except Exception as e:
+            print(f"[Error] Не удалось зарегистрировать хоткеи: {e}")
 
     def set_language_panel_style(self, gaming=False):
         if gaming:
