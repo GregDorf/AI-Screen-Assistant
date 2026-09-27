@@ -34,7 +34,6 @@ from PyQt6.QtGui import (
     QPainter,
     QPen,
     QColor,
-    QScreen,
     QPixmap,
     QFont,
     QFontMetrics,
@@ -82,29 +81,13 @@ class AIOverlay(QWidget):
             Qt.WindowType.WindowStaysOnTopHint
         )
 
-        # Включаем настоящую прозрачность фона окна
-        # на уровне ОС.
+        # Настоящая прозрачность окна на уровне ОС.
         self.setAttribute(
             Qt.WidgetAttribute.WA_TranslucentBackground,
             True
         )
 
         self.setAutoFillBackground(False)
-
-        # self.hwnd = None
-        # if sys.platform == "win32":
-        #     try:
-        #         self.hwnd = int(self.winId())
-        #         ctypes.windll.user32.SetWindowDisplayAffinity(
-        #             self.hwnd,
-        #             0x00000011
-        #         )
-        #     except Exception as e:
-        #         print(
-        #             f"[System Warning] "
-        #             f"Не удалось установить защиту "
-        #             f"от захвата окна: {e}"
-        #         )
 
         self.is_selecting = False
         self.is_choosing_action = False
@@ -121,7 +104,7 @@ class AIOverlay(QWidget):
         # Обычная область выделения.
         self.current_target_rect = QRect()
 
-        # Отдельная фиксированная область игрового режима.
+        # Фиксированная область игрового режима.
         self.gaming_rect = QRect()
 
         self.btn_question_rect = QRect()
@@ -251,8 +234,10 @@ class AIOverlay(QWidget):
         self.lang_panel.installEventFilter(
             self
         )
-        
-        self.set_language_panel_style(gaming=False)
+
+        self.set_language_panel_style(
+            gaming=False
+        )
 
         self.populate_languages()
 
@@ -274,8 +259,14 @@ class AIOverlay(QWidget):
 
         self.gaming_translation_loading = False
 
+        # ВАЖНО:
+        # Передаём САМ AIOverlay как overlay_window.
+        #
+        # Именно этот top-level QWidget рисует Gaming Mode
+        # и именно его HWND нужно исключить из capture.
         self.gaming_manager = GamingTranslationManager(
-            self
+            self,
+            overlay_window=self
         )
 
         self.gaming_manager.translation_started.connect(
@@ -312,7 +303,6 @@ class AIOverlay(QWidget):
             self.update_animation
         )
 
-        # FPS
         self.anim_timer.start(33)
 
         # -----------------------------------------------------
@@ -320,13 +310,25 @@ class AIOverlay(QWidget):
         # -----------------------------------------------------
 
         self.hotkey_signal = HotkeySignal()
-        self.hotkey_signal.triggered.connect(self.start_capture)
+
+        self.hotkey_signal.triggered.connect(
+            self.start_capture
+        )
 
         self.esc_signal = EscSignal()
-        self.esc_signal.triggered.connect(self.reset_all)
 
-        # Запускаем регистрацию хуков с задержкой в 3 секунды
-        QTimer.singleShot(3000, self.init_hotkeys)
+        self.esc_signal.triggered.connect(
+            self.reset_all
+        )
+
+        QTimer.singleShot(
+            3000,
+            self.init_hotkeys
+        )
+
+    # =========================================================
+    # HOTKEYS
+    # =========================================================
 
     def init_hotkeys(self):
         try:
@@ -334,21 +336,36 @@ class AIOverlay(QWidget):
                 config.HOTKEY,
                 self.hotkey_signal.triggered.emit
             )
+
             keyboard.add_hotkey(
                 "esc",
                 self.esc_signal.triggered.emit
             )
-            print("[System] Глобальные горячие клавиши успешно зарегистрированы")
-        except Exception as e:
-            print(f"[Error] Не удалось зарегистрировать хоткеи: {e}")
 
-    def set_language_panel_style(self, gaming=False):
+            print(
+                "[System] Глобальные горячие клавиши успешно зарегистрированы"
+            )
+
+        except Exception as e:
+            print(
+                f"[Error] Не удалось зарегистрировать хоткеи: {e}"
+            )
+
+    # =========================================================
+    # LANGUAGE PANEL STYLE
+    # =========================================================
+
+    def set_language_panel_style(
+        self,
+        gaming=False
+    ):
         if gaming:
             border_color = "#dc2828"
             background_color = "rgba(35, 15, 15, 245)"
             accent_color = "#dc2828"
             hover_color = "#c82020"
             label_color = "#ffb0b0"
+
         else:
             border_color = "#50ff50"
             background_color = "rgba(20, 20, 20, 240)"
@@ -356,17 +373,18 @@ class AIOverlay(QWidget):
             hover_color = "#40e040"
             label_color = "#b0ffb0"
 
-        # Сама панель
-        self.lang_panel.setStyleSheet(f"""
+        self.lang_panel.setStyleSheet(
+            f"""
             QWidget {{
                 background-color: {background_color};
                 border: 1px solid {border_color};
                 border-radius: 8px;
             }}
-        """)
+            """
+        )
 
-        # ComboBox FROM
-        self.combo_from_lang.setStyleSheet(f"""
+        self.combo_from_lang.setStyleSheet(
+            f"""
             QComboBox {{
                 background-color: rgba(30, 30, 30, 240);
                 color: white;
@@ -389,10 +407,11 @@ class AIOverlay(QWidget):
                 selection-color: white;
                 border: 1px solid {border_color};
             }}
-        """)
+            """
+        )
 
-        # ComboBox TO
-        self.combo_to_lang.setStyleSheet(f"""
+        self.combo_to_lang.setStyleSheet(
+            f"""
             QComboBox {{
                 background-color: rgba(30, 30, 30, 240);
                 color: white;
@@ -415,9 +434,9 @@ class AIOverlay(QWidget):
                 selection-color: white;
                 border: 1px solid {border_color};
             }}
-        """)
+            """
+        )
 
-        # Надписи
         label_style = f"""
             color: {label_color};
             font-family: 'Segoe UI';
@@ -428,10 +447,12 @@ class AIOverlay(QWidget):
         """
 
         for widget in self.lang_panel.findChildren(QLabel):
-            widget.setStyleSheet(label_style)
+            widget.setStyleSheet(
+                label_style
+            )
 
-        # Кнопка OK
-        self.btn_confirm_translate.setStyleSheet(f"""
+        self.btn_confirm_translate.setStyleSheet(
+            f"""
             QPushButton {{
                 background-color: {accent_color};
                 color: #1e1e1e;
@@ -450,15 +471,16 @@ class AIOverlay(QWidget):
             QPushButton:pressed {{
                 background-color: {border_color};
             }}
-        """)
+            """
+        )
 
     # =========================================================
     # GAMING MODE SIGNALS
     # =========================================================
 
     def on_gaming_translation_started(self):
-        # В Gaming Mode индикатор загрузки намеренно не отображается.
         self.gaming_translation_loading = False
+
         self.update()
 
     def on_gaming_translation_finished(
@@ -588,19 +610,6 @@ class AIOverlay(QWidget):
     # =========================================================
 
     def update_interaction_mask(self):
-        """
-        Динамически пересчитывает маску окна.
-
-        Если пользователь выбирает область —
-        окно получает клики по всему экрану.
-
-        Если нет —
-        окно прозрачно для кликов везде,
-        кроме самих плашек истории.
-        """
-
-        # В игровом режиме маска не нужна:
-        # весь overlay должен пропускать мышь.
         if self.is_gaming_mode:
             self.clearMask()
             return
@@ -620,8 +629,6 @@ class AIOverlay(QWidget):
             region = QRegion()
 
             for item in self.history_items:
-                # Добавляем рамку выделения
-                # и плашку ответа.
                 region = region.united(
                     QRegion(
                         item.rect.adjusted(
@@ -644,9 +651,8 @@ class AIOverlay(QWidget):
                     )
                 )
 
-                # Добавляем соединительную линию
-                # в маску.
                 c1 = item.rect.center()
+
                 c2 = item.answer_rect.center()
 
                 p1 = self.get_rect_intersection_point(
@@ -660,6 +666,7 @@ class AIOverlay(QWidget):
                 )
 
                 dx = p2.x() - p1.x()
+
                 dy = p2.y() - p1.y()
 
                 length = math.hypot(
@@ -751,14 +758,12 @@ class AIOverlay(QWidget):
 
         self.is_choosing_lang = False
 
-        # Сбрасываем координаты предыдущего выделения.
         self.start_pos = QPoint()
 
         self.end_pos = QPoint()
 
         self.current_target_rect = QRect()
 
-        # Очищаем маску для полноэкранного выбора.
         self.clearMask()
 
         self.showMaximized()
@@ -812,7 +817,7 @@ class AIOverlay(QWidget):
         self.is_choosing_action = False
 
         self.is_choosing_lang = False
-        
+
         self.language_panel_for_gaming = False
 
         self.is_capturing = False
@@ -834,25 +839,18 @@ class AIOverlay(QWidget):
     def mousePressEvent(self, event):
         pos = event.pos()
 
-        # -----------------------------------------------------
-        # НАЧАЛО ВЫДЕЛЕНИЯ
-        # -----------------------------------------------------
-
         if (
             self.is_selecting
             and event.button()
             == Qt.MouseButton.LeftButton
         ):
             self.start_pos = pos
+
             self.end_pos = pos
 
             self.update()
 
             return
-
-        # -----------------------------------------------------
-        # ОБЫЧНЫЙ РЕЖИМ
-        # -----------------------------------------------------
 
         if (
             not self.is_selecting
@@ -887,10 +885,6 @@ class AIOverlay(QWidget):
 
                     return
 
-        # -----------------------------------------------------
-        # ACTION BUTTONS
-        # -----------------------------------------------------
-
         elif (
             self.is_choosing_action
             and event.button()
@@ -908,10 +902,12 @@ class AIOverlay(QWidget):
 
             elif self.btn_translate_rect.contains(pos):
                 self.language_panel_for_gaming = False
+
                 self.setup_language_panel()
 
             elif self.btn_gaming_rect.contains(pos):
                 self.language_panel_for_gaming = True
+
                 self.setup_language_panel()
 
             else:
@@ -930,10 +926,6 @@ class AIOverlay(QWidget):
     def mouseMoveEvent(self, event):
         pos = event.pos()
 
-        # -----------------------------------------------------
-        # DRAG ANSWER
-        # -----------------------------------------------------
-
         if self.dragging_item:
             self.dragging_item.answer_rect.moveTo(
                 pos - self.drag_offset
@@ -942,10 +934,6 @@ class AIOverlay(QWidget):
             self.update()
 
             return
-
-        # -----------------------------------------------------
-        # RESIZE ANSWER
-        # -----------------------------------------------------
 
         if self.resizing_item:
             new_w = max(
@@ -972,10 +960,6 @@ class AIOverlay(QWidget):
 
             return
 
-        # -----------------------------------------------------
-        # AREA SELECTION
-        # -----------------------------------------------------
-
         if (
             self.is_selecting
             and bool(
@@ -986,10 +970,6 @@ class AIOverlay(QWidget):
             self.end_pos = pos
 
             self.update()
-
-        # -----------------------------------------------------
-        # ACTION BUTTON HOVER
-        # -----------------------------------------------------
 
         elif self.is_choosing_action:
             if (
@@ -1006,10 +986,6 @@ class AIOverlay(QWidget):
                 self.setCursor(
                     Qt.CursorShape.ArrowCursor
                 )
-
-        # -----------------------------------------------------
-        # NORMAL MODE HOVER
-        # -----------------------------------------------------
 
         elif (
             not self.is_selecting
@@ -1060,10 +1036,6 @@ class AIOverlay(QWidget):
         self.dragging_item = None
 
         self.resizing_item = None
-
-        # -----------------------------------------------------
-        # FINISH AREA SELECTION
-        # -----------------------------------------------------
 
         if (
             self.is_selecting
@@ -1181,19 +1153,19 @@ class AIOverlay(QWidget):
 
     def setup_language_panel(self):
         self.is_choosing_action = False
+
         self.is_choosing_lang = True
 
         self.setCursor(
             Qt.CursorShape.ArrowCursor
         )
 
-        # Цвет панели зависит от того,
-        # какой режим пользователь выбрал.
         self.set_language_panel_style(
             gaming=self.language_panel_for_gaming
         )
 
         panel_width = 200
+
         panel_height = 160
 
         base_x = (
@@ -1224,14 +1196,26 @@ class AIOverlay(QWidget):
         )
 
         self.lang_panel.show()
+
         self.lang_panel.raise_()
+
         self.lang_panel.activateWindow()
 
+    # =========================================================
+    # CONFIRM TRANSLATION
+    # =========================================================
+
     def on_confirm_translation(self):
-        from_lang = self.combo_from_lang.currentData()
-        target_lang = self.combo_to_lang.currentData()
+        from_lang = (
+            self.combo_from_lang.currentData()
+        )
+
+        target_lang = (
+            self.combo_to_lang.currentData()
+        )
 
         self.lang_panel.hide()
+
         self.is_choosing_lang = False
 
         if self.language_panel_for_gaming:
@@ -1370,8 +1354,6 @@ class AIOverlay(QWidget):
             False
         )
 
-        # Активируем маску,
-        # чтобы остальной экран "ожил".
         self.update_interaction_mask()
 
         self.showMaximized()
@@ -1402,11 +1384,8 @@ class AIOverlay(QWidget):
             return center
 
         left = rect.left() - 2
-
         right = rect.right() + 2
-
         top = rect.top() - 2
-
         bottom = rect.bottom() + 2
 
         best_pt = center
@@ -1524,7 +1503,7 @@ class AIOverlay(QWidget):
         clip_rect = event.rect()
 
         # -----------------------------------------------------
-        # SCREENSHOT ONLY DURING AREA SELECTION
+        # SCREENSHOT DURING AREA SELECTION
         # -----------------------------------------------------
 
         if (
@@ -1544,12 +1523,8 @@ class AIOverlay(QWidget):
                     self.screen_pixmap
                 )
 
-        # В остальных режимах фон оставляем
-        # прозрачным. Благодаря WA_TranslucentBackground
-        # под ним видна реальная игра/рабочий стол.
-
         # -----------------------------------------------------
-        # NORMAL MODE RESULTS
+        # NORMAL MODE
         # -----------------------------------------------------
 
         if not self.is_gaming_mode:
@@ -1619,7 +1594,6 @@ class AIOverlay(QWidget):
             ):
                 painter.save()
 
-                # Всегда инвертируем цвет рамки относительно фона.
                 painter.setCompositionMode(
                     QPainter.CompositionMode.CompositionMode_Difference
                 )
@@ -1630,7 +1604,11 @@ class AIOverlay(QWidget):
 
                 painter.setPen(
                     QPen(
-                        QColor(255, 255, 255),
+                        QColor(
+                            255,
+                            255,
+                            255
+                        ),
                         2,
                         Qt.PenStyle.SolidLine
                     )
@@ -1757,10 +1735,7 @@ class AIOverlay(QWidget):
                     "T"
                 )
 
-                # -------------------------------------------------
-                # GAMING BUTTON
-                # -------------------------------------------------
-
+                # Gaming
                 painter.setBrush(
                     QColor(
                         220,
@@ -1800,14 +1775,12 @@ class AIOverlay(QWidget):
                     -10
                 )
 
-                # Основное тело геймпада
                 painter.drawRoundedRect(
                     gamepad,
                     8,
                     8
                 )
 
-                # Левая ручка
                 left_handle = QPolygon([
                     QPoint(
                         gamepad.left(),
@@ -1827,7 +1800,6 @@ class AIOverlay(QWidget):
                     )
                 ])
 
-                # Правая ручка
                 right_handle = QPolygon([
                     QPoint(
                         gamepad.right(),
@@ -1855,7 +1827,6 @@ class AIOverlay(QWidget):
                     right_handle
                 )
 
-                # D-Pad
                 painter.setBrush(
                     QColor(
                         220,
@@ -1886,7 +1857,6 @@ class AIOverlay(QWidget):
                     14
                 )
 
-                # Две кнопки справа
                 painter.drawEllipse(
                     gamepad.right() - 12,
                     gamepad.center().y() - 5,
@@ -2079,16 +2049,17 @@ class AIOverlay(QWidget):
             return
 
         self.is_choosing_action = False
+
         self.is_choosing_lang = False
 
         self.lang_panel.hide()
 
         self.is_gaming_mode = True
 
-        # Убираем результаты обычного режима.
         self.history_items.clear()
 
         self.gaming_translation = ""
+
         self.gaming_translation_loading = False
 
         self.setCursor(
@@ -2107,18 +2078,40 @@ class AIOverlay(QWidget):
 
         self.clearMask()
 
-        # Показываем overlay до запуска OCR.
+        # -----------------------------------------------------
+        # СНАЧАЛА создаём/показываем реальное top-level окно.
+        # -----------------------------------------------------
+
         self.showMaximized()
+
         self.raise_()
 
-        # В игровом режиме весь overlay прозрачен
-        # для мыши — игра продолжает получать клики.
+        # -----------------------------------------------------
+        # Весь Overlay пропускает мышь.
+        # -----------------------------------------------------
+
         self.setAttribute(
             Qt.WidgetAttribute.WA_TransparentForMouseEvents,
             True
         )
 
-        # Запускаем игровой OCR после полной настройки overlay.
+        # -----------------------------------------------------
+        # ВАЖНО:
+        # Передаём именно этот AIOverlay в менеджер.
+        # Менеджер использует его HWND для
+        # SetWindowDisplayAffinity.
+        # -----------------------------------------------------
+
+        self.gaming_manager.set_overlay_window(
+            self
+        )
+
+        # -----------------------------------------------------
+        # Запускаем OCR.
+        # Защита capture будет установлена внутри start()
+        # ДО первого capture_and_ocr().
+        # -----------------------------------------------------
+
         self.gaming_manager.start(
             self.gaming_rect,
             target_lang,
@@ -2126,13 +2119,17 @@ class AIOverlay(QWidget):
         )
 
         self.update()
+
         self.repaint()
 
     # =========================================================
     # DRAW GAMING MODE
     # =========================================================
 
-    def draw_gaming_mode(self, painter):
+    def draw_gaming_mode(
+        self,
+        painter
+    ):
         rect = self.gaming_rect
 
         if (
@@ -2144,17 +2141,13 @@ class AIOverlay(QWidget):
 
         painter.save()
 
-        # =========================================================
-        # Базовый режим рисования
-        # =========================================================
-
         painter.setCompositionMode(
             QPainter.CompositionMode.CompositionMode_SourceOver
         )
 
-        # =========================================================
+        # -----------------------------------------------------
         # Затемнение игровой области
-        # =========================================================
+        # -----------------------------------------------------
 
         painter.setPen(
             Qt.PenStyle.NoPen
@@ -2174,9 +2167,9 @@ class AIOverlay(QWidget):
             painter.brush()
         )
 
-        # =========================================================
-        # Красная рамка Gaming Mode
-        # =========================================================
+        # -----------------------------------------------------
+        # Красная рамка
+        # -----------------------------------------------------
 
         painter.setBrush(
             Qt.BrushStyle.NoBrush
@@ -2203,119 +2196,102 @@ class AIOverlay(QWidget):
             )
         )
 
-        # =========================================================
+        # -----------------------------------------------------
         # ПЕРЕВОД
-        # =========================================================
+        # -----------------------------------------------------
 
         if self.gaming_translation:
+            text = self.gaming_translation.strip()
 
-            # Внутренняя область для текста.
-            # =====================================================
-            # ТЕКСТ ПЕРЕВОДА
-            # =====================================================
-
-            if self.gaming_translation:
-
-                text = self.gaming_translation.strip()
-
-                # Оставляем дополнительный запас со всех сторон.
-                # Это важно: boundingRect() и реальная отрисовка
-                # могут немного отличаться из-за font metrics.
-                # Отступ зависит от размера выделенной области.
-                padding_x = min(25, max(5, rect.width() // 20))
-                padding_y = min(25, max(3, rect.height() // 10))
-
-                text_rect = rect.adjusted(
-                    padding_x,
-                    padding_y,
-                    -padding_x,
-                    -padding_y
+            padding_x = min(
+                25,
+                max(
+                    5,
+                    rect.width() // 20
                 )
+            )
 
-                min_font_size = 6
-                max_font_size = 32
+            padding_y = min(
+                25,
+                max(
+                    3,
+                    rect.height() // 10
+                )
+            )
 
-                best_font = QFont(
+            text_rect = rect.adjusted(
+                padding_x,
+                padding_y,
+                -padding_x,
+                -padding_y
+            )
+
+            min_font_size = 6
+
+            max_font_size = 32
+
+            best_font = QFont(
+                "Segoe UI",
+                min_font_size,
+                QFont.Weight.Bold
+            )
+
+            low = min_font_size
+
+            high = max_font_size
+
+            while low <= high:
+                font_size = (
+                    low + high
+                ) // 2
+
+                test_font = QFont(
                     "Segoe UI",
-                    min_font_size,
+                    font_size,
                     QFont.Weight.Bold
                 )
 
-                # -------------------------------------------------
-                # Подбираем максимально большой шрифт,
-                # который гарантированно помещается.
-                # -------------------------------------------------
+                metrics = QFontMetrics(
+                    test_font
+                )
 
-                low = min_font_size
-                high = max_font_size
-
-                while low <= high:
-
-                    font_size = (
-                        low + high
-                    ) // 2
-
-                    test_font = QFont(
-                        "Segoe UI",
-                        font_size,
-                        QFont.Weight.Bold
-                    )
-
-                    metrics = QFontMetrics(test_font)
-
-                    bounding_rect = metrics.boundingRect(
+                bounding_rect = (
+                    metrics.boundingRect(
                         text_rect,
                         Qt.TextFlag.TextWordWrap,
                         text
                     )
-
-                    # Добавляем небольшой запас по высоте.
-                    # Это предотвращает ситуацию, когда последняя
-                    # строка формально помещается, но визуально
-                    # оказывается подрезанной.
-                    fits_width = (
-                        bounding_rect.width()
-                        <= text_rect.width()
-                    )
-
-                    fits_height = (
-                        bounding_rect.height()
-                        <= text_rect.height()
-                    )
-
-                    if fits_width and fits_height:
-
-                        best_font = test_font
-                        low = font_size + 1
-
-                    else:
-
-                        high = font_size - 1
-
-                # -------------------------------------------------
-                # Финальная отрисовка
-                # -------------------------------------------------
-
-                painter.setFont(best_font)
-
-                painter.setPen(
-                    QColor(
-                        255,
-                        255,
-                        255
-                    )
                 )
 
-                painter.drawText(
-                    text_rect,
-                    Qt.AlignmentFlag.AlignCenter
-                    | Qt.TextFlag.TextWordWrap,
-                    text
+                fits_width = (
+                    bounding_rect.width()
+                    <= text_rect.width()
                 )
 
-            # =====================================================
-            # Финальная отрисовка текста
-            # =====================================================
+                fits_height = (
+                    bounding_rect.height()
+                    <= text_rect.height()
+                )
+
+                if fits_width and fits_height:
+                    best_font = test_font
+
+                    low = font_size + 1
+
+                else:
+                    high = font_size - 1
+
+            painter.setFont(
+                best_font
+            )
+
+            painter.setPen(
+                QColor(
+                    255,
+                    255,
+                    255
+                )
+            )
 
             painter.drawText(
                 text_rect,
@@ -2324,21 +2300,18 @@ class AIOverlay(QWidget):
                 text
             )
 
-        # =========================================================
+        # -----------------------------------------------------
         # ЗАГРУЗКА
-        # =========================================================
+        # -----------------------------------------------------
 
         if self.gaming_translation_loading:
-
             loader_size = 42
 
             loader_rect = QRect(
                 rect.center().x()
                 - loader_size // 2,
-
                 rect.center().y()
                 - loader_size // 2,
-
                 loader_size,
                 loader_size
             )
@@ -2374,20 +2347,16 @@ if __name__ == "__main__":
         sys.argv
     )
 
-    # Не завершать приложение
-    # при скрытии окон.
     app.setQuitOnLastWindowClosed(
         False
     )
 
     overlay = AIOverlay()
 
-    # Создаем системный трей.
     tray = TrayManager(
         overlay
     )
 
-    # Корректное завершение через Ctrl+C.
     signal.signal(
         signal.SIGINT,
         lambda signum, frame:

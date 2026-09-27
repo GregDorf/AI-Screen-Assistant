@@ -1,4 +1,5 @@
 from difflib import SequenceMatcher
+import ctypes
 
 import numpy as np
 
@@ -10,12 +11,49 @@ from PyQt6.QtCore import (
     QRect
 )
 
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import (
+    QApplication
+)
 
 from processor import (
     AIWorker,
     recognize_text
 )
+
+
+# ============================================================
+# WINDOWS SCREEN CAPTURE PROTECTION
+# ============================================================
+
+WDA_NONE = 0x00000000
+
+WDA_MONITOR = 0x00000001
+
+WDA_EXCLUDEFROMCAPTURE = 0x00000011
+
+
+# ============================================================
+# WINDOWS API SETUP
+# ============================================================
+
+if hasattr(ctypes, "windll"):
+
+    _SetWindowDisplayAffinity = (
+        ctypes.windll.user32.SetWindowDisplayAffinity
+    )
+
+    _SetWindowDisplayAffinity.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint32
+    ]
+
+    _SetWindowDisplayAffinity.restype = (
+        ctypes.c_bool
+    )
+
+else:
+
+    _SetWindowDisplayAffinity = None
 
 
 # ============================================================
@@ -25,17 +63,22 @@ from processor import (
 class GameOCRWorker(QThread):
 
     result_ready = pyqtSignal(str)
+
     error = pyqtSignal(str)
 
-    def __init__(self, image, parent=None):
-        super().__init__(parent)
+    def __init__(
+        self,
+        image,
+        parent=None
+    ):
+        super().__init__(
+            parent
+        )
 
         self.image = image
 
     def run(self):
-
         try:
-
             text = recognize_text(
                 self.image,
                 preprocess=True
@@ -44,12 +87,16 @@ class GameOCRWorker(QThread):
             if self.isInterruptionRequested():
                 return
 
-            self.result_ready.emit(text)
+            self.result_ready.emit(
+                text
+            )
 
         except Exception as e:
 
             if not self.isInterruptionRequested():
-                self.error.emit(str(e))
+                self.error.emit(
+                    str(e)
+                )
 
 
 # ============================================================
@@ -66,12 +113,20 @@ class GamingTranslationManager(QObject):
 
     def __init__(
         self,
-        parent=None
+        parent=None,
+        overlay_window=None
     ):
-
         super().__init__(
             parent
         )
+
+        # ----------------------------------------------------
+        # РЕАЛЬНЫЙ TOP-LEVEL OVERLAY
+        # ----------------------------------------------------
+
+        self.overlay_window = overlay_window
+
+        self.overlay_capture_protected = False
 
         # ----------------------------------------------------
         # TARGET REGION
@@ -112,14 +167,10 @@ class GamingTranslationManager(QObject):
         self.is_running = False
 
         # ----------------------------------------------------
-        # OCR WORKER
+        # WORKERS
         # ----------------------------------------------------
 
         self.ocr_worker = None
-
-        # ----------------------------------------------------
-        # TRANSLATION WORKER
-        # ----------------------------------------------------
 
         self.translation_worker = None
 
@@ -140,6 +191,163 @@ class GamingTranslationManager(QObject):
         )
 
     # ========================================================
+    # SET OVERLAY WINDOW
+    # ========================================================
+
+    def set_overlay_window(
+        self,
+        overlay_window
+    ):
+        self.overlay_window = (
+            overlay_window
+        )
+
+        print(
+            "[Gaming] Overlay window установлен"
+        )
+
+    # ========================================================
+    # PROTECT OVERLAY FROM CAPTURE
+    # ========================================================
+
+    def _protect_overlay_from_capture(
+        self
+    ):
+        self.overlay_capture_protected = False
+
+        if _SetWindowDisplayAffinity is None:
+            print(
+                "[Gaming] "
+                "SetWindowDisplayAffinity недоступен"
+            )
+
+            return False
+
+        overlay = self.overlay_window
+
+        if overlay is None:
+            print(
+                "[Gaming] "
+                "Overlay window не задан"
+            )
+
+            return False
+
+        try:
+            # ------------------------------------------------
+            # Получаем HWND именно AIOverlay.
+            # ------------------------------------------------
+
+            hwnd = int(
+                overlay.winId()
+            )
+
+            if hwnd == 0:
+                print(
+                    "[Gaming] "
+                    "Не удалось получить HWND overlay"
+                )
+
+                return False
+
+            print(
+                "[Gaming] "
+                f"HWND overlay: {hwnd}"
+            )
+
+            # ------------------------------------------------
+            # Исключаем окно из поддерживаемого Windows
+            # screen capture.
+            # ------------------------------------------------
+
+            result = (
+                _SetWindowDisplayAffinity(
+                    ctypes.c_void_p(hwnd),
+                    WDA_EXCLUDEFROMCAPTURE
+                )
+            )
+
+            if not result:
+                error_code = (
+                    ctypes.get_last_error()
+                )
+
+                print(
+                    "[Gaming] "
+                    "Не удалось установить "
+                    "WDA_EXCLUDEFROMCAPTURE. "
+                    f"Windows error: {error_code}"
+                )
+
+                return False
+
+            self.overlay_capture_protected = True
+
+            print(
+                "[Gaming] "
+                "Overlay исключён из screen capture"
+            )
+
+            return True
+
+        except Exception as e:
+
+            print(
+                "[Gaming] "
+                "Ошибка установки capture protection: "
+                f"{e}"
+            )
+
+            return False
+
+    # ========================================================
+    # REMOVE CAPTURE PROTECTION
+    # ========================================================
+
+    def _remove_overlay_capture_protection(
+        self
+    ):
+        if not self.overlay_capture_protected:
+            return
+
+        if _SetWindowDisplayAffinity is None:
+            return
+
+        overlay = self.overlay_window
+
+        if overlay is None:
+            return
+
+        try:
+            hwnd = int(
+                overlay.winId()
+            )
+
+            if hwnd == 0:
+                return
+
+            _SetWindowDisplayAffinity(
+                ctypes.c_void_p(hwnd),
+                WDA_NONE
+            )
+
+            print(
+                "[Gaming] "
+                "Защита overlay от screen capture снята"
+            )
+
+        except Exception as e:
+
+            print(
+                "[Gaming] "
+                "Ошибка снятия capture protection: "
+                f"{e}"
+            )
+
+        finally:
+            self.overlay_capture_protected = False
+
+    # ========================================================
     # START
     # ========================================================
 
@@ -149,17 +357,14 @@ class GamingTranslationManager(QObject):
         target_lang="русский",
         from_lang="auto"
     ):
-
         # ----------------------------------------------------
-        # На всякий случай гарантируем,
-        # что старый OCR полностью завершён.
+        # Старый OCR
         # ----------------------------------------------------
 
         self._wait_for_ocr_worker()
 
         # ----------------------------------------------------
-        # Старый перевод также не должен оставаться
-        # бесхозным.
+        # Старый перевод
         # ----------------------------------------------------
 
         self._wait_for_translation_worker()
@@ -193,6 +398,25 @@ class GamingTranslationManager(QObject):
         self.is_running = True
 
         # ----------------------------------------------------
+        # CAPTURE PROTECTION
+        #
+        # Overlay уже показан из main.py.
+        # Сейчас получаем его реальный HWND и исключаем
+        # его из поддерживаемого Windows capture.
+        # ----------------------------------------------------
+
+        protected = (
+            self._protect_overlay_from_capture()
+        )
+
+        if not protected:
+            print(
+                "[Gaming] "
+                "ВНИМАНИЕ: Overlay НЕ был исключён "
+                "из screen capture"
+            )
+
+        # ----------------------------------------------------
         # START
         # ----------------------------------------------------
 
@@ -213,8 +437,9 @@ class GamingTranslationManager(QObject):
     # WAIT FOR OCR
     # ========================================================
 
-    def _wait_for_ocr_worker(self):
-
+    def _wait_for_ocr_worker(
+        self
+    ):
         worker = self.ocr_worker
 
         if worker is None:
@@ -231,12 +456,7 @@ class GamingTranslationManager(QObject):
 
             worker.wait()
 
-        # ----------------------------------------------------
-        # После wait() поток гарантированно остановлен.
-        # ----------------------------------------------------
-
         if worker.isFinished():
-
             worker.deleteLater()
 
         self.ocr_worker = None
@@ -245,8 +465,9 @@ class GamingTranslationManager(QObject):
     # WAIT FOR TRANSLATION
     # ========================================================
 
-    def _wait_for_translation_worker(self):
-
+    def _wait_for_translation_worker(
+        self
+    ):
         worker = self.translation_worker
 
         if worker is None:
@@ -264,7 +485,6 @@ class GamingTranslationManager(QObject):
             worker.wait()
 
         if worker.isFinished():
-
             worker.deleteLater()
 
         self.translation_worker = None
@@ -274,34 +494,13 @@ class GamingTranslationManager(QObject):
     # ========================================================
 
     def stop(self):
-
-        # ----------------------------------------------------
-        # Сначала запрещаем новые задачи.
-        # ----------------------------------------------------
-
         self.is_running = False
-
-        # ----------------------------------------------------
-        # Останавливаем таймер.
-        # ----------------------------------------------------
 
         self.ocr_timer.stop()
 
-        # ----------------------------------------------------
-        # OCR
-        # ----------------------------------------------------
-
         self._wait_for_ocr_worker()
 
-        # ----------------------------------------------------
-        # TRANSLATION
-        # ----------------------------------------------------
-
         self._wait_for_translation_worker()
-
-        # ----------------------------------------------------
-        # RESET STATE
-        # ----------------------------------------------------
 
         self.last_text = ""
 
@@ -321,38 +520,49 @@ class GamingTranslationManager(QObject):
             "[Gaming] Игровой режим остановлен"
         )
 
+        # После выхода из Gaming Mode
+        # снова разрешаем обычный capture этого окна.
+        self._remove_overlay_capture_protection()
+
     # ========================================================
-    # OCR
+    # OCR CAPTURE
     # ========================================================
 
-    def capture_and_ocr(self):
-
+    def capture_and_ocr(
+        self
+    ):
         if not self.is_running:
             return
 
         if self.target_rect.isNull():
             return
 
-        # ----------------------------------------------------
-        # Предыдущий OCR ещё работает.
-        # Просто ждём следующего тика таймера.
-        # ----------------------------------------------------
-
         if (
             self.ocr_worker is not None
             and self.ocr_worker.isRunning()
         ):
-
             return
 
         try:
-
-            screen = QApplication.primaryScreen()
+            screen = (
+                QApplication.primaryScreen()
+            )
 
             if screen is None:
                 return
 
             rect = self.target_rect
+
+            # ------------------------------------------------
+            # ВАЖНО:
+            #
+            # Overlay НЕ скрываем.
+            #
+            # Windows получает отдельный HWND overlay
+            # с WDA_EXCLUDEFROMCAPTURE.
+            #
+            # Здесь захватывается экран как раньше.
+            # ------------------------------------------------
 
             pixmap = screen.grabWindow(
                 0,
@@ -405,22 +615,11 @@ class GamingTranslationManager(QObject):
                 )
             )
 
-            # ------------------------------------------------
             # Qt RGB -> OpenCV BGR
-            # ------------------------------------------------
-
             image_array = (
                 image_array[:, :, ::-1]
                 .copy()
             )
-
-            # ------------------------------------------------
-            # Создаём worker.
-            #
-            # Передаём self как parent.
-            # Это дополнительно защищает от случайного
-            # уничтожения объекта раньше времени.
-            # ------------------------------------------------
 
             worker = GameOCRWorker(
                 image_array,
@@ -453,17 +652,13 @@ class GamingTranslationManager(QObject):
     # OCR FINISHED
     # ========================================================
 
-    def on_ocr_finished(self):
-
+    def on_ocr_finished(
+        self
+    ):
         worker = self.ocr_worker
 
         if worker is None:
             return
-
-        # ----------------------------------------------------
-        # finished() означает, что run() уже завершился.
-        # Теперь поток можно удалить.
-        # ----------------------------------------------------
 
         self.ocr_worker = None
 
@@ -477,7 +672,6 @@ class GamingTranslationManager(QObject):
         self,
         error
     ):
-
         print(
             f"[Gaming] OCR ошибка: {error}"
         )
@@ -490,7 +684,6 @@ class GamingTranslationManager(QObject):
         self,
         text
     ):
-
         if not text:
             return ""
 
@@ -510,7 +703,6 @@ class GamingTranslationManager(QObject):
         text_a,
         text_b
     ):
-
         a = self.normalize_text(
             text_a
         )
@@ -525,19 +717,11 @@ class GamingTranslationManager(QObject):
         if a == b:
             return 1.0
 
-        # ----------------------------------------------------
-        # Символьное сходство
-        # ----------------------------------------------------
-
         char_similarity = SequenceMatcher(
             None,
             a,
             b
         ).ratio()
-
-        # ----------------------------------------------------
-        # Слова
-        # ----------------------------------------------------
 
         words_a = a.split()
 
@@ -552,13 +736,13 @@ class GamingTranslationManager(QObject):
             words_b
         ).ratio()
 
-        # ----------------------------------------------------
-        # Пересечение слов
-        # ----------------------------------------------------
+        set_a = set(
+            words_a
+        )
 
-        set_a = set(words_a)
-
-        set_b = set(words_b)
+        set_b = set(
+            words_b
+        )
 
         intersection = len(
             set_a & set_b
@@ -569,18 +753,12 @@ class GamingTranslationManager(QObject):
         )
 
         if union > 0:
-
             word_overlap = (
                 intersection / union
             )
 
         else:
-
             word_overlap = 0.0
-
-        # ----------------------------------------------------
-        # Сходство длины
-        # ----------------------------------------------------
 
         len_a = len(a)
 
@@ -592,19 +770,14 @@ class GamingTranslationManager(QObject):
         )
 
         if max_len > 0:
-
             length_similarity = (
                 1.0
-                - abs(len_a - len_b) / max_len
+                - abs(len_a - len_b)
+                / max_len
             )
 
         else:
-
             length_similarity = 0.0
-
-        # ----------------------------------------------------
-        # Итог
-        # ----------------------------------------------------
 
         similarity = (
             char_similarity * 0.35
@@ -623,7 +796,6 @@ class GamingTranslationManager(QObject):
         self,
         text
     ):
-
         if not self.is_running:
             return
 
@@ -635,12 +807,7 @@ class GamingTranslationManager(QObject):
         if not self.normalize_text(
             text
         ):
-
             return
-
-        # ----------------------------------------------------
-        # COMPARE WITH CURRENT TEXT
-        # ----------------------------------------------------
 
         if self.last_text:
 
@@ -662,19 +829,14 @@ class GamingTranslationManager(QObject):
             )
 
             if (
-                similarity >=
-                self.similarity_threshold
+                similarity
+                >= self.similarity_threshold
             ):
-
                 self.candidate_text = ""
 
                 self.candidate_count = 0
 
                 return
-
-        # ----------------------------------------------------
-        # FIRST CANDIDATE
-        # ----------------------------------------------------
 
         if not self.candidate_text:
 
@@ -690,10 +852,6 @@ class GamingTranslationManager(QObject):
             )
 
             return
-
-        # ----------------------------------------------------
-        # COMPARE WITH CANDIDATE
-        # ----------------------------------------------------
 
         similarity = (
             self.text_similarity(
@@ -712,15 +870,10 @@ class GamingTranslationManager(QObject):
             f"{similarity_percent:.1f}%"
         )
 
-        # ----------------------------------------------------
-        # SAME CANDIDATE
-        # ----------------------------------------------------
-
         if (
-            similarity >=
-            self.similarity_threshold
+            similarity
+            >= self.similarity_threshold
         ):
-
             self.candidate_count += 1
 
             print(
@@ -730,12 +883,7 @@ class GamingTranslationManager(QObject):
                 f"{self.required_candidate_count})"
             )
 
-        # ----------------------------------------------------
-        # NEW CANDIDATE
-        # ----------------------------------------------------
-
         else:
-
             self.candidate_text = text
 
             self.candidate_count = 1
@@ -749,20 +897,11 @@ class GamingTranslationManager(QObject):
 
             return
 
-        # ----------------------------------------------------
-        # NOT ENOUGH CONFIRMATIONS
-        # ----------------------------------------------------
-
         if (
-            self.candidate_count <
-            self.required_candidate_count
+            self.candidate_count
+            < self.required_candidate_count
         ):
-
             return
-
-        # ----------------------------------------------------
-        # CONFIRMED
-        # ----------------------------------------------------
 
         stable_text = (
             self.candidate_text
@@ -789,7 +928,6 @@ class GamingTranslationManager(QObject):
         self,
         text
     ):
-
         if not self.is_running:
             return
 
@@ -797,10 +935,6 @@ class GamingTranslationManager(QObject):
 
         if not text:
             return
-
-        # ----------------------------------------------------
-        # DUPLICATE PROTECTION
-        # ----------------------------------------------------
 
         if self.last_text:
 
@@ -812,27 +946,17 @@ class GamingTranslationManager(QObject):
             )
 
             if (
-                similarity >=
-                self.similarity_threshold
+                similarity
+                >= self.similarity_threshold
             ):
-
                 return
 
-        # ----------------------------------------------------
-        # SAVE CURRENT TEXT
-        # ----------------------------------------------------
-
         self.last_text = text
-
-        # ----------------------------------------------------
-        # TRANSLATION BUSY
-        # ----------------------------------------------------
 
         if (
             self.translation_worker is not None
             and self.translation_worker.isRunning()
         ):
-
             self.pending_text = text
 
             self.status_changed.emit(
@@ -840,10 +964,6 @@ class GamingTranslationManager(QObject):
             )
 
             return
-
-        # ----------------------------------------------------
-        # TRANSLATE
-        # ----------------------------------------------------
 
         self.start_translation(
             text
@@ -857,19 +977,13 @@ class GamingTranslationManager(QObject):
         self,
         text
     ):
-
         if not self.is_running:
             return
-
-        # ----------------------------------------------------
-        # Не создаём несколько переводчиков.
-        # ----------------------------------------------------
 
         if (
             self.translation_worker is not None
             and self.translation_worker.isRunning()
         ):
-
             self.pending_text = text
 
             return
@@ -887,19 +1001,11 @@ class GamingTranslationManager(QObject):
         )
 
         worker = AIWorker(
-
             image_bytes=b"",
-
             action="game_translation",
-
-            target_lang=
-                self.target_lang,
-
-            from_lang=
-                self.from_lang,
-
-            extracted_text=
-                text
+            target_lang=self.target_lang,
+            from_lang=self.from_lang,
+            extracted_text=text
         )
 
         self.translation_worker = worker
@@ -918,7 +1024,6 @@ class GamingTranslationManager(QObject):
         self,
         answer
     ):
-
         if not self.is_running:
             return
 
@@ -938,12 +1043,7 @@ class GamingTranslationManager(QObject):
         self.translation_worker = None
 
         if worker is not None:
-
             worker.deleteLater()
-
-        # ----------------------------------------------------
-        # Новый текст появился во время перевода.
-        # ----------------------------------------------------
 
         if self.pending_text:
 
@@ -960,7 +1060,6 @@ class GamingTranslationManager(QObject):
                 )
                 < self.similarity_threshold
             ):
-
                 self.start_translation(
                     pending
                 )
